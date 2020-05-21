@@ -3,7 +3,9 @@ const Express=require('express');
 const mysql=require('mysql');
 const bodyParser = require('body-parser');
 const app=Express();
+var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 
+var request = require('request');
 var db = mysql.createConnection({
     host     : 'localhost',
     user     : 'root',
@@ -13,11 +15,14 @@ var db = mysql.createConnection({
 
  db.connect();
  var id=1;
-    
- app.use(bodyParser.json());
 
+ app.use( bodyParser.json() );       // to support JSON-encoded bodies
+ app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
+   extended: true
+ })); 
+ 
 
-
+ 
 
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,13 +31,57 @@ app.use((req, res, next) => {
     next();
   });
 
+  app.post('/add/compte_complet/', (req, res) => {
 
+   // var xmlhttp = new XMLHttpRequest();
+    var url = 'https://api-adresse.data.gouv.fr/search/?q='+req.body.rue+'+'+req.body.ville+'+'+req.body.codepostale;
+    var bdy;
+    request.get(url,(err,ress,body)=>{bdy=JSON.parse(body);bdy=bdy.features[0].geometry.coordinates;
+   var adresse=[req.body.rue,req.body.ville,parseInt(req.body.codepostale)];
+    adresse.push(bdy[1]);
+    adresse.push(bdy[0]);
+   db.query('insert into adresse (rue,ville,code_postale,geo_x_att,geo_y_latt) values (?)',[adresse],(err,result)=>
+    {    
+        if(err)
+        {
+            res.status(500).json({erreur:"lors de creation adresse"});
+            console.log(err);
+        }
+        else
+        {
+        
+            var compte=[req.body.email,req.body.password,1,'U','null',result.insertId];
+             var profile=[req.body.nom,req.body.prenom,parseInt(req.body.tel)];
+             db.query('insert into profile (Nom_utilisateur,Prenom_utilisateur,numero_tel) values (?)',[profile],(err,resultatfinal)=>
+             {
+                 if(err){res.status(500).json({erreur:"lors de creation profile"});console.log(err)}
+                else
+                     {
+                     compte[4]=resultatfinal.insertId;
+                     db.query('insert into compte (Email_compte,ps_compte_utilisateur,active,statut,id_profile,id_adresse) values (?)',[compte],(err,final)=>
+                          {
+                                 if(err)
+                                  {
+                                   res.status(500).json({erreur:"lors de creation compte"});
+                                   console.log(err);
+                                  }
+                                 else
+                                  {
+                                     res.status(200).json({success:'creation du compte est complete'});
+                                     }
+                          });
 
-  app.post('/add/compte_complet', (req, res, next) => {
-    console.log(req.body);
-    res.status(201).json(
-        req.body);
-  });
+                     }
+                  });
+        }
+
+    
+   
+   
+   
+});
+  });});
+
 
 
 app.get('/messages/:id',(req,res,next)=>
