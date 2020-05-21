@@ -30,6 +30,23 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     next();
   });
+  app.post('/add/annonce/', (req, res) => {
+
+    var annonce=[req.body.contenu,parseInt(req.body.prix),id,parseInt(req.body.idcategorie)];
+    db.query('insert into annonce (date_annonce,contenu,prix,id_compte,idcategorie)values(CURDATE(),?)',[annonce],(err,result)=>
+    {
+        if(err){res.status(500).json({erreur:"creation de l'annonce"});console.log(err)}
+        else
+        {
+            res.status(200).json({success:"annonce publiée"});
+
+        }
+    }
+    )
+
+
+  });
+
 
   app.post('/add/compte_complet/', (req, res) => {
 
