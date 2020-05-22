@@ -4,6 +4,7 @@ const mysql=require('mysql');
 const bodyParser = require('body-parser');
 const app=Express();
 var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
+const sha256=require('sha256');
 
 var request = require('request');
 var db = mysql.createConnection({
@@ -22,13 +23,41 @@ var db = mysql.createConnection({
  })); 
  
 
- 
+
 
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content, Accept, Content-Type, Authorization');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     next();
+  });
+
+  app.post('/connexion/', (req, res) => {
+ 
+    
+    db.query('select ps_compte_utilisateur from compte where Email_compte = ? ',req.body.email,(err,result)=>
+  {
+    if(err){console.log(err);res.status(500).json({erreur:"echech d'autentification1"})}
+    else
+    {   console.log(result)
+        
+        
+        if(result.length>0){
+        if(sha256(req.body.mot_de_passe)===result[0].ps_compte_utilisateur)
+        {
+            res.status(201).json({success:'autnetification reussi'})
+        }
+        else
+        {
+            res.status(500).json({success:'autnetification echec'})
+        }
+    }
+    else
+    {
+        res.status(500).json({success:'autnetification echec'});
+    }
+    }
+  });
   });
   app.post('/add/annonce/', (req, res) => {
 
@@ -111,9 +140,32 @@ app.get('/messages/:id',(req,res,next)=>
     });
 });
 
+app.post('/add/message',(req,res,next)=>
+{
+    var message=[req.body.sujet,req.body.contenu,parseInt(req.body.id_destination),id];
+    db.query('insert into message (sujet,contenu,id_destination,id_compte,date_message)values(?,curdate())',[message],(err,rows,fields)=>
+    {   
+        if(err) {res.status('500').json({erreur:'erreur est produite'});console.log(err)}
+        res.status('200').json({sucess:"message envoyé avec succes"});
+    }
+  
+)});
+
+app.get('/delete/message/:id',(req,res,next)=>
+{
+    
+    db.query('delete from message where ?',parseInt(req.params.id),(err,rows,fields)=>
+    {   
+        if(err) {res.status('500').json({erreur:'erreur est produite'});console.log(err)}
+        res.status('200').json({sucess:"message supprimé avec succes"});
+    }
+  
+)});
+
+
 app.get('/annonces/',(req,res,next)=>
 {
-    db.query('select * from annonce where 1',(err,rows,fields)=>
+    db.query('SELECT * FROM `annonce` WHERE 1 ORDER by id_annonce DESC',(err,rows,fields)=>
     {   
         if(err) {res.status('404');res.json({erreur:'erreur est produite'})}
         res.status('201').json(rows);
