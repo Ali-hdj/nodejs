@@ -3,10 +3,12 @@ const Express=require('express');
 const mysql=require('mysql');
 const bodyParser = require('body-parser');
 const app=Express();
-var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 const sha256=require('sha256');
-
+const jwt=require('jsonwebtoken');
 var request = require('request');
+
+const auth=require('./auth');
+
 var db = mysql.createConnection({
     host     : 'localhost',
     user     : 'root',
@@ -32,10 +34,12 @@ app.use((req, res, next) => {
     next();
   });
 
+ 
+
   app.post('/connexion/', (req, res) => {
  
     
-    db.query('select ps_compte_utilisateur from compte where Email_compte = ? ',req.body.email,(err,result)=>
+    db.query('select id_compte,ps_compte_utilisateur,geo_x_att,geo_y_latt from compte inner join adresse using(id_adresse) where Email_compte = ? ',req.body.email,(err,result)=>
   {
     if(err){console.log(err);res.status(500).json({erreur:"echech d'autentification1"})}
     else
@@ -45,7 +49,14 @@ app.use((req, res, next) => {
         if(result.length>0){
         if(sha256(req.body.mot_de_passe)===result[0].ps_compte_utilisateur)
         {
-            res.status(201).json({success:'autnetification reussi'})
+            res.status(201).json({
+            success:'autnetification reussi'
+            ,id:result[0].id_compte,
+            att:result[0].geo_x_att,
+            long:result[0].geo_y_latt,
+            tocken:jwt.sign({id:result[0].id_compte},
+            'CLE_DIY_BRICO',{expiresIn:'24h'})
+                                    })
         }
         else
         {
@@ -59,9 +70,12 @@ app.use((req, res, next) => {
     }
   });
   });
-  app.post('/add/annonce/', (req, res) => {
 
-    var annonce=[req.body.contenu,parseInt(req.body.prix),id,parseInt(req.body.idcategorie)];
+ 
+  
+  app.post('/add/annonce/', auth.auth,(req, res) => {
+
+    var annonce=[req.body.contenu,parseInt(req.body.prix),auth.id,parseInt(req.body.idcategorie)];
     db.query('insert into annonce (date_annonce,contenu,prix,id_compte,idcategorie)values(CURDATE(),?)',[annonce],(err,result)=>
     {
         if(err){res.status(500).json({erreur:"creation de l'annonce"});console.log(err)}
@@ -96,7 +110,7 @@ app.use((req, res, next) => {
         else
         {
         
-            var compte=[req.body.email,req.body.password,1,'U','null',result.insertId];
+            var compte=[req.body.email,sha256(req.body.password),1,'U','null',result.insertId];
              var profile=[req.body.nom,req.body.prenom,parseInt(req.body.tel)];
              db.query('insert into profile (Nom_utilisateur,Prenom_utilisateur,numero_tel) values (?)',[profile],(err,resultatfinal)=>
              {
@@ -108,7 +122,7 @@ app.use((req, res, next) => {
                           {
                                  if(err)
                                   {
-                                   res.status(500).json({erreur:"lors de creation compte"});
+                                   res.status(500).json({erreur:"Email existe deja essai un autre "});
                                    console.log(err);
                                   }
                                  else
@@ -130,19 +144,30 @@ app.use((req, res, next) => {
 
 
 
-app.get('/messages/:id',(req,res,next)=>
+app.get('/messages/:id',auth.auth,(req,res,next)=>
 {
-    db.query('select * from message where id_compte=?',req.params.id,(err,rows,fields)=>
+    db.query('select * from message where id_compte=? order by id_message desc',req.params.id,(err,rows,fields)=>
     {   
-        if(err) {res.status('404');res.json({erreur:'erreur est produite'})}
+        if(err) {res.status('500');res.json({erreur:'erreur est produite'})}
         res.status('201').json(rows);
         res.end();
     });
 });
 
-app.post('/add/message',(req,res,next)=>
+app.get('/messagesR/:id',auth.auth,(req,res,next)=>
 {
-    var message=[req.body.sujet,req.body.contenu,parseInt(req.body.id_destination),id];
+    db.query('select * from message where id_destination=? order by id_message desc',req.params.id,(err,rows,fields)=>
+    {   
+        if(err) {res.status('500');res.json({erreur:'erreur est produite'})}
+        res.status('201').json(rows);
+        res.end();
+    });
+});
+
+
+app.post('/add/message',auth.auth,(req,res,next)=>
+{
+    var message=[req.body.sujet,req.body.contenu,parseInt(req.body.id_destination),auth.id];
     db.query('insert into message (sujet,contenu,id_destination,id_compte,date_message)values(?,curdate())',[message],(err,rows,fields)=>
     {   
         if(err) {res.status('500').json({erreur:'erreur est produite'});console.log(err)}
@@ -165,7 +190,8 @@ app.get('/delete/message/:id',(req,res,next)=>
 
 app.get('/annonces/',(req,res,next)=>
 {
-    db.query('SELECT * FROM `annonce` WHERE 1 ORDER by id_annonce DESC',(err,rows,fields)=>
+    
+    db.query('SELECT * FROM `annonce` inner join compte using(id_compte) inner join adresse using (id_adresse) inner join profile using (id_profile) WHERE 1 ORDER by id_annonce DESC',(err,rows,fields)=>
     {   
         if(err) {res.status('404');res.json({erreur:'erreur est produite'})}
         res.status('201').json(rows);
@@ -197,15 +223,18 @@ app.get('/profile/:id',(req,res,next)=>
 )
 
 /***************************************Calcule des voisins *************************** */
-app.get('/voisins/:r',(req,res,next)=>
+app.get('/voisins/:r',auth.auth,(req,res,next)=>
 {   var r= req.params.r;
   var c;
-    db.query('select geo_x_att,geo_y_latt from compte inner join adresse using(id_adresse) where id_compte=?',id,(err,rows,fields)=>
+
+
+
+    db.query('select geo_x_att,geo_y_latt from compte inner join adresse using(id_adresse) where id_compte=?',auth.id,(err,rows,fields)=>
     {   
         if(err) {res.status('404');res.json({erreur:'erreur est produite'})}
         console.log(rows[0]);
         c=rows[0];
-        db.query('select geo_x_att,geo_y_latt,rue from  adresse  where 1',(err,rows,fields)=>
+        db.query('select geo_x_att,geo_y_latt,rue,nom_utilisateur,prenom_utilisateur,Email_compte from compte inner join  adresse using(id_adresse) inner join profile using(id_profile) where 1',(err,rows,fields)=>
    
     {   
         if(err) {res.status('404');console.log(err);res.json({erreur:'erreur est produite'})}
